@@ -1,13 +1,21 @@
 import datetime
 from fpdf import FPDF
 import requests
+import csv
+import matplotlib.pyplot as plt
+import datetime
 #ordering a cake program
 
 def main():
     size = quantity()
     flavours = flavour()
     baketime, invoicedue = date()
-    egg_price = eggprice(size, flavours)
+
+    eggpack_price = get_egg_price()
+    egg_price = eggprice(size, flavours, eggpack_price)
+
+    save_price(eggpack_price)
+    plot_prices()
 
     invoice(size, flavours, baketime, invoicedue, egg_price)
 
@@ -93,43 +101,82 @@ def invoice(size, flavours, baketime, invoicedue, egg_price):
     pdf.cell(0, 10, "Cake Order", new_x = "LMARGIN", new_y = "NEXT", align= "C")
 
     pdf.cell(0, 10, f"size = {size}", new_x = "LMARGIN", new_y = "NEXT", align= "L" )
-    pdf.cell(0, 10, f"size = {flavours['sponge']}", new_x = "LMARGIN", new_y = "NEXT", align= "L" )
-    pdf.cell(0, 10, f"size = {flavours['icing']}", new_x = "LMARGIN", new_y = "NEXT", align= "L" )
-    pdf.cell(0, 10, f"size = {flavours['filling']}", new_x = "LMARGIN", new_y = "NEXT", align= "L" )
+    pdf.cell(0, 10, f"Sponge: {flavours['sponge']}", new_x="LMARGIN", new_y="NEXT", align="L")
+    pdf.cell(0, 10, f"Icing: {flavours['icing']}", new_x="LMARGIN", new_y="NEXT", align="L")
+    pdf.cell(0, 10, f"Filling: {flavours['filling']}", new_x="LMARGIN", new_y="NEXT", align="L")
 
-    pdf.cell(0, 10, f"Price = £{egg_price:.2f} new_x = "LMARGIN", new_y = "NEXT", align= "C")
+    pdf.cell(0, 10, f"Egg Price = £{egg_price:.2f}", new_x = "LMARGIN", new_y = "NEXT", align= "C")
     pdf.cell(0, 10, f"Invoice Due: {invoicedue}", new_x = "LMARGIN", new_y = "NEXT", align= "C")
 
     pdf.output("cake_order.pdf")
-
-if __name__ in "__main__":
-    main()
 
 # Vanilla 6inch cake needs 3 eggs find the price of eggs based on the market and add it to the price of the cake.
 #Dictionary of how many eggs in each cake
 Ingredients_eggs = {"vanilla 6inch": 3, "chocolate 6inch": 4, "vanilla 8inch": 4, "chocolate 8inch": 7, "vanilla 10inch": 5, "chocolate 10inch": 9, "vanilla sheetcake": 12, "chocolate sheetcake": 14}
 
 # calculate the price of eggs you need for the cake
-def eggprice():
-    if size == "6inch cake" and flavours["sponge"] == "vanilla":
-        eggs = 3
+def eggprice(size, flavours, eggpack_price):
+    if "sheet cakes" in size:
+        number_of_cakes = int(size.split()[0])
+        cake_size = "sheetcake"
     else:
-        eggs = 0
+        number_of_cakes = 1
+        cake_size = size.split()[0]
 
-    eggpack_price == 1.80
-    pack_size == 6
+    key = f"{flavours['sponge']} {cake_size}"
+    eggs = Ingredients_eggs[key] * number_of_cakes
 
-    price_per_egg == (eggpack_price/pack_size)
-    total = eggs * price_per_egg
+    pack_size = 6
 
-    return total
+    price_per_egg = eggpack_price / pack_size
+    return eggs * price_per_egg
 
 #Use an API to get an up to date price of eggpack
 def get_egg_price():
-    response = request.get( "https://prices.openfoodfacts.org/api/v1/prices", params =
-                           {"product_code": "YOUR_EGG_PACK_BARCODE","currency": "GBP","order_by": "-date","size": 1,}
-                           timeout = 10)
+    response = requests.get("https://prices.openfoodfacts.org/api/v1/prices",
+        params={
+            "product_code": "5000306004240",
+            "currency": "GBP",
+            "order_by": "-date",
+            "size": 1,},
+        timeout=10,)
+
     response.raise_for_status()
     data = response.json()
-    return eggpack_price = data["price"]
 
+    if not data["items"]:
+        raise ValueError("No GBP price found for this egg pack")
+    
+    return float(data["items"][0]["price"])
+
+#Save the price of eggs to a CSV file with the date
+def save_price(egg_price):
+    today = datetime.date.today().isoformat()
+
+    with open("egg_prices.csv", "a", newline="") as file:
+        writer = csv.writer(file)
+        writer.writerow([today, egg_price])
+
+#open the csv, read it and organise the dates into one list and prices into another list and then plot them. 
+def plot_prices():
+    dates = []
+    prices = []
+
+    with open("egg_prices.csv", "r") as file:
+        reader = csv.reader(file)
+
+        for row in reader:
+            dates.append(row[0])
+            prices.append(float(row[1]))
+
+    plt.plot(dates, prices, marker="o")
+    plt.xlabel("Date")
+    plt.ylabel("Egg Price (£)")
+    plt.title("Egg Prices")
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    plt.savefig("egg_price_history.png")
+    plt.close()
+
+if __name__ == "__main__":
+    main()
